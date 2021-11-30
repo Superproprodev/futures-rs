@@ -6,6 +6,7 @@
 use crate::task::AtomicWaker;
 use alloc::sync::{Arc, Weak};
 use core::cell::UnsafeCell;
+use core::cmp;
 use core::fmt::{self, Debug};
 use core::iter::FromIterator;
 use core::marker::PhantomData;
@@ -393,11 +394,14 @@ impl<Fut: Future> Stream for FuturesUnordered<Fut> {
         // caps the number of calls to `poll` on underlying futures a single call to
         // `poll_next` is allowed to make.
         //
-        // The value is the length of FuturesUnordered. This ensures that each
-        // future is polled only once at most per iteration.
+        // The value itself is chosen somewhat arbitrarily. It needs to be high enough
+        // that amortize wakeup and scheduling costs, but low enough that we do not
+        // starve other tasks for long.
+        //
+        // Each future is polled only once *at most* per iteration.
         //
         // See also https://github.com/rust-lang/futures-rs/issues/2047.
-        let yield_every = self.len();
+        let yield_every = cmp::min(self.len(), 32);
 
         // Keep track of how many child futures we have polled,
         // in case we want to forcibly yield.
